@@ -55,9 +55,11 @@ class Server(object):
         application_close_timeout=10,
         ready_callable=None,
         server_name="Daphne",
+        logger=logger,
         # Deprecated and does not work, remove in version 2.2
         ws_protocols=None,
     ):
+        self.logger = logger
         self.application = application
         self.endpoints = endpoints or []
         self.listeners = []
@@ -81,7 +83,7 @@ class Server(object):
         self.server_name = server_name
         # Check our construction is actually sensible
         if not self.endpoints:
-            logger.error("No endpoints. This server will not listen on anything.")
+            self.logger.error("No endpoints. This server will not listen on anything.")
             sys.exit(1)
 
     def run(self):
@@ -105,9 +107,9 @@ class Server(object):
 
         # Detect what Twisted features are enabled
         if http.H2_ENABLED:
-            logger.info("HTTP/2 support enabled")
+            self.logger.info("HTTP/2 support enabled")
         else:
-            logger.info(
+            self.logger.info(
                 "HTTP/2 support not enabled (install the http2 and tls Twisted extras)"
             )
 
@@ -116,7 +118,7 @@ class Server(object):
         reactor.callLater(2, self.timeout_checker)
 
         for socket_description in self.endpoints:
-            logger.info("Configuring endpoint %s", socket_description)
+            self.logger.info("Configuring endpoint %s", socket_description)
             ep = serverFromString(reactor, str(socket_description))
             listener = ep.listen(self.http_factory)
             listener.addCallback(self.listen_success)
@@ -147,14 +149,14 @@ class Server(object):
             host = port.getHost()
             if hasattr(host, "host") and hasattr(host, "port"):
                 self.listening_addresses.append((host.host, host.port))
-                logger.info(
+                self.logger.info(
                     "Listening on TCP address %s:%s",
                     port.getHost().host,
                     port.getHost().port,
                 )
 
     def listen_error(self, failure):
-        logger.critical("Listen failure: %s", failure.getErrorMessage())
+        self.logger.critical("Listen failure: %s", failure.getErrorMessage())
         self.stop()
 
     def stop(self):
@@ -263,7 +265,7 @@ class Server(object):
                 and time.time() - disconnected > self.application_close_timeout
             ):
                 if application_instance and not application_instance.done():
-                    logger.warning(
+                    self.logger.warning(
                         "Application instance %r for connection %s took too long to shut down and was killed.",
                         application_instance,
                         repr(protocol),
@@ -282,7 +284,7 @@ class Server(object):
                             # Protocol is asking the server to exit (likely during test)
                             self.stop()
                         else:
-                            logger.error(
+                            self.logger.error(
                                 "Exception inside application: %s",
                                 exception,
                                 exc_info=exception,
@@ -307,7 +309,7 @@ class Server(object):
             if not application_instance.done():
                 application_instance.cancel()
                 wait_for.append(application_instance)
-        logger.info("Killed %i pending application instances", len(wait_for))
+        self.logger.info("Killed %i pending application instances", len(wait_for))
         # Make Twisted wait until they're all dead
         wait_deferred = defer.Deferred.fromFuture(asyncio.gather(*wait_for))
         wait_deferred.addErrback(lambda x: None)

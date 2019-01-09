@@ -6,6 +6,16 @@ import tempfile
 import traceback
 from concurrent.futures import CancelledError
 
+from .endpoints import build_endpoint_description_strings
+from .server import Server
+
+from twisted.internet import reactor # isort:skip
+
+
+#ctx = multiprocessing.get_context('fork') # causes '[Errno 9] Bad file descriptor' on Macs
+ctx = multiprocessing.get_context('spawn')
+#ctx = multiprocessing.get_context('forkserver')
+
 
 class DaphneTestingInstance:
     """
@@ -98,7 +108,7 @@ class DaphneTestingInstance:
         TestApplication.save_setup(response_messages=messages)
 
 
-class DaphneProcess(multiprocessing.Process):
+class DaphneProcess(ctx.Process):
     """
     Process subclass that launches and runs a Daphne instance, communicating the
     port it ends up listening on back to the parent process.
@@ -109,23 +119,16 @@ class DaphneProcess(multiprocessing.Process):
         self.host = host
         self.application = application
         self.kwargs = kwargs or {}
-        self.setup = setup or (lambda: None)
-        self.teardown = teardown or (lambda: None)
-        self.port = multiprocessing.Value("i")
-        self.ready = multiprocessing.Event()
-        self.errors = multiprocessing.Queue()
+        self.setup = setup
+        self.teardown = teardown
+        self.port = ctx.Value("i")
+        self.ready = ctx.Event()
+        self.errors = ctx.Queue()
+        self.log_level = logging.getLogger().getEffectiveLevel()
 
     def run(self):
-        # OK, now we are in a forked child process, and want to use the reactor.
-        # However, FreeBSD systems like MacOS do not fork the underlying Kqueue,
-        # which asyncio (hence asyncioreactor) is built on.
-        # Therefore, we should uninstall the broken reactor and install a new one.
-        _reinstall_reactor()
-
-        from twisted.internet import reactor
-
-        from .server import Server
-        from .endpoints import build_endpoint_description_strings
+        logger = multiprocessing.log_to_stderr()
+        logger.setLevel(self.log_level)
 
         try:
             # Create the server class
@@ -134,17 +137,21 @@ class DaphneProcess(multiprocessing.Process):
                 application=self.application,
                 endpoints=endpoints,
                 signal_handlers=False,
+                logger=logger,
                 **self.kwargs
             )
             # Set up a poller to look for the port
             reactor.callLater(0.1, self.resolve_port)
             # Run with setup/teardown
-            self.setup()
+            if self.setup:
+                self.setup()
             try:
                 self.server.run()
             finally:
-                self.teardown()
+                if self.teardown:
+                    self.teardown()
         except Exception as e:
+            logger.exception(e)
             # Put the error on our queue so the parent gets it
             self.errors.put((e, traceback.format_exc()))
 

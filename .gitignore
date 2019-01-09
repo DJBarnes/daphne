@@ -10,3 +10,4 @@ build/
 .eggs
 test_layer*
 test_consumer*
+.pytest_cache
