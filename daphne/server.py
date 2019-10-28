@@ -170,14 +170,6 @@ class Server(object):
         else:
             self.abort_start = True
 
-    def clear(self):
-        """Remove all applications, but keep reactor running."""
-        self.reactor.callLater(1, self.kill_all_applications)
-
-    def set_application(self, application):
-        """Change the application that is created for new connections."""
-        self.application = application
-
     ### Protocol handling
 
     def protocol_connected(self, protocol):

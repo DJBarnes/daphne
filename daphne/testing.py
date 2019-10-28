@@ -119,8 +119,8 @@ class DaphneProcess(ctx.Process):
         self.host = host
         self.application = application
         self.kwargs = kwargs or {}
-        self.setup = setup
-        self.teardown = teardown
+        self.setup = setup or (lambda: None)
+        self.teardown = teardown or (lambda: None)
         self.port = ctx.Value("i")
         self.ready = ctx.Event()
         self.errors = ctx.Queue()
@@ -143,13 +143,11 @@ class DaphneProcess(ctx.Process):
             # Set up a poller to look for the port
             reactor.callLater(0.1, self.resolve_port)
             # Run with setup/teardown
-            if self.setup:
-                self.setup()
+            self.setup()
             try:
                 self.server.run()
             finally:
-                if self.teardown:
-                    self.teardown()
+                self.teardown()
         except Exception as e:
             logger.exception(e)
             # Put the error on our queue so the parent gets it
